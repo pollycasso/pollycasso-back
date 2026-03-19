@@ -1,0 +1,51 @@
+export const FRIEND_ERROR_CODES = {
+  INVALID_ACCESS_TOKEN: 'INVALID_ACCESS_TOKEN',
+  EXPIRED_ACCESS_TOKEN: 'EXPIRED_ACCESS_TOKEN',
+  ACCESS_TOKEN_MISSING: 'ACCESS_TOKEN_MISSING',
+
+  INVALID_INPUT: 'INVALID_INPUT',
+  CANNOT_REQUEST_SELF: 'CANNOT_REQUEST_SELF',
+  CANNOT_CANCEL_RECEIVED_REQUEST: 'CANNOT_CANCEL_RECEIVED_REQUEST',
+  CANNOT_RESPOND_OWN_REQUEST: 'CANNOT_RESPOND_OWN_REQUEST',
+
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
+  REQUEST_NOT_FOUND: 'REQUEST_NOT_FOUND',
+  NOT_A_FRIEND: 'NOT_A_FRIEND',
+  ALREADY_FRIEND: 'ALREADY_FRIEND',
+  ALREADY_SENT_REQUEST: 'ALREADY_SENT_REQUEST',
+  ALREADY_BLOCKED: 'ALREADY_BLOCKED',
+  REQUEST_ALREADY_PROCESSED: 'REQUEST_ALREADY_PROCESSED',
+  BLOCKED_BY_TARGET: 'BLOCKED_BY_TARGET',
+  BLOCKING_TARGET: 'BLOCKING_TARGET',
+} as const;
+
+export const FRIEND_DOMAIN_ERRORS: Record<string, { field: string; reason: string }> = {
+  CANNOT_REQUEST_SELF: {
+    field: 'targetUserId',
+    reason: 'Cannot send friend request to yourself',
+  },
+};
+
+export const FRIEND_EVENTS = {
+  GET_LIST: 'friends:getList',
+  GET_RECOMMENDED_LIST: 'friends:getRecommendedList',
+  SEARCH: 'friends:search',
+  SEARCH_USERS_WITH_RELATION: 'friends:searchUsersWithRelation',
+  REQUEST_SEND: 'friends:requestSend',
+  REQUEST_ACCEPT: 'friends:requestAccept',
+  BLOCK: 'friends:block',
+  DELETE: 'friends:delete',
+
+  STATUS_UPDATED: 'friends:statusUpdated',
+  SYSTEM_NOTIFICATION: 'system:notification',
+} as const;
+
+export const FRIEND_SEARCH_RULES = {
+  SEARCH_RESULT_LIMIT: 12,
+  RECOMMENDED_FRIENDS_LIMIT: 4,
+} as const;
+
+export enum FriendSearchType {
+  TAG = 'tag',
+  NICKNAME = 'nickname',
+}

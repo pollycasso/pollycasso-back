@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Result {
+  WIN
+  LOSE
+  DRAW
+}
+
+enum Provider {
+  GOOGLE
+  KAKAO
+}
+
+enum RoomMode {
+  SOLO
+  TEAM
+}
+
+enum Role {
+  HOST
+  PLAYER
+}
+
+enum Team {
+  RED
+  BLUE
+  NONE
+}
+
+enum MatchStatus {
+  LOADING
+  PENDING
+  ACTIVE
+  COMPLETED
+}
+
+enum RoomStatus {
+  WAITING
+  IN_PROGRESS
+  FINISHED
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum CosmeticSubCategory {
+  BIRD
+  ACC
+  HAT
+  TOP
+  BOTTOM
+  SHOES
+  EFFECT
+}
+
+enum StatsPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model User {
+  id             Int       @id @default(autoincrement())
+  username       String?   @unique @db.VarChar(20)
+  hashedPassword String?   @map("hashed_password") @db.VarChar(60)
+  nickname       String    @db.VarChar(30)
+  tag            String    @db.VarChar(10)
+  provider       Provider?
+  providerId     String?   @map("provider_id") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  profile                UserProfile?
+  userStats              UserStats[]
+  roomMembers            RoomMember[]
+  cosmeticItems          UserCosmeticItem[]
+  gameItems              UserGameItem[]
+  votes                  Vote[]
+  sentFriendRequests     Friend[]           @relation("FriendRequester")
+  receivedFriendRequests Friend[]           @relation("FriendReceiver")
+  blockingUsers          BlockList[]        @relation("BlockedBy")
+  blockedByUsers         BlockList[]        @relation("Blocking")
+
+  @@unique([provider, providerId])
+  @@unique([nickname, tag])
+  @@map("users")
+}
+
+model UserProfile {
+  userId     Int      @id @map("user_id")
+  outfit     Json?
+  level      Int      @default(1)
+  experience Int      @default(0)
+  coin       Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model UserStats {
+  id          Int         @id @default(autoincrement())
+
+  userId      Int         @map("user_id")
+  period      StatsPeriod @map("period")
+
+  periodStart DateTime    @map("period_start")
+  periodEnd   DateTime    @map("period_end")
+
+
+  totalScore  Int         @default(0) @map("total_score")
+  coinBalance Int         @default(0) @map("coin_balance")
+  rank        Int?        
+
+  level       Int         @default(1) @map("level")
+
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+  @@index([period, periodStart, totalScore(sort: Desc), level(sort: Desc), userId])
+  @@index([period, periodStart, coinBalance(sort: Desc), level(sort: Desc), userId])
+  @@map("user_stats")
+}
+
+model Friend {
+  id          Int          @id @default(autoincrement())
+  requesterId Int          @map("requester_id")
+  receiverId  Int          @map("receiver_id")
+  status      FriendStatus
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  requester User @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("FriendReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([receiverId, status])
+  @@map("friends")
+}
+
+model BlockList {
+  id        Int      @id @default(autoincrement())
+  blockerId Int
+  blockedId Int
+  createdAt DateTime @default(now())
+
+  blocker User @relation("BlockedBy", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocking", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("block_lists")
+}
+
+model Room {
+  id             Int        @id @default(autoincrement())
+  name           String
+  mode           RoomMode
+  maxPlayers     Int        @map("max_players")
+  isPrivate      Boolean    @map("is_private")
+  hashedPassword String?    @map("hashed_password") @db.VarChar(60)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  startedAt      DateTime?  @map("started_at")
+  endedAt        DateTime?  @map("ended_at")
+  status         RoomStatus @default(WAITING)
+
+  roomMembers RoomMember[]
+  matches     Match[]
+
+  @@map("rooms")
+}
+
+model RoomMember {
+  id     Int  @id @default(autoincrement())
+  roomId Int? @map("room_id")
+  userId Int  @map("user_id")
+
+  userNickname String @map("user_nickname") @db.VarChar(30)
+  userLevel    Int    @map("user_level")
+
+  role      Role      @default(PLAYER)
+  team      Team      @default(NONE)
+  isReady   Boolean   @default(false) @map("is_ready")
+  outfit    Json?
+  joinedAt  DateTime  @default(now()) @map("joined_at")
+  leftAt    DateTime? @map("left_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  room                 Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  matchResults         MatchResult[]
+  drawings             Drawing[]
+  matchesAsTopicWriter Match[]
+
+  @@unique([roomId, userId])
+  @@map("room_members")
+}
+
+model Match {
+  id            Int         @id @default(autoincrement())
+  roomId        Int?        @map("room_id")
+  status        MatchStatus
+  topic         String?     @db.VarChar(100)
+  topicWriterId Int?        @map("topic_writer_id")
+  startedAt     DateTime    @default(now()) @map("started_at")
+  endedAt       DateTime?   @map("ended_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  room         Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  topicWriter  RoomMember?   @relation(fields: [topicWriterId], references: [id], onDelete: Restrict)
+  matchResults MatchResult[]
+  drawings     Drawing[]
+
+  @@map("matches")
+}
+
+model MatchResult {
+  id           Int         @id @default(autoincrement())
+  matchId      Int         @map("match_id")
+  roomMemberId Int         @map("room_member_id")
+
+  score        Int?
+  placement    Int?
+  team         Team        @default(NONE)
+  outcome      Result?
+
+  awardedXp    Int         @default(0) @map("awarded_xp")
+  awardedCoin  Int         @default(0) @map("awarded_coin")
+  rewardedAt   DateTime?   @map("rewarded_at")
+
+  recordedAt   DateTime    @default(now()) @map("recorded_at")
+
+  roomMember   RoomMember  @relation(fields: [roomMemberId], references: [id], onDelete: Restrict)
+  match        Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([roomMemberId, matchId])
+  @@index([outcome])
+  @@index([recordedAt])
+  @@index([matchId])
+  @@map("match_results")
+}
+
+model Drawing {
+  id           Int  @id @default(autoincrement())
+  matchId      Int  @map("match_id")
+  roomMemberId Int  @map("room_member_id")
+  data         Json @map("data")
+  round        Int  @map("round")
+
+  match      Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  roomMember RoomMember @relation(fields: [roomMemberId], references: [id], onDelete: Restrict)
+  votes      Vote[]
+
+  @@unique([matchId, roomMemberId, round])
+  @@map("drawings")
+}
+
+model Vote {
+  id        Int       @id @default(autoincrement())
+  drawingId Int       @map("drawing_id")
+  voterId   Int       @map("voter_id")
+  rating    Int
+  deletedAt DateTime? @map("deleted_at")
+
+  drawing Drawing @relation(fields: [drawingId], references: [id], onDelete: Cascade)
+  voter   User    @relation(fields: [voterId], references: [id], onDelete: Restrict)
+
+  @@unique([drawingId, voterId])
+  @@index([rating])
+  @@map("votes")
+}
+
+model CosmeticItem {
+  id          Int                 @id @default(autoincrement())
+  name        String              @db.VarChar(50)
+  price       Int
+  description String              @db.Text
+  subCategory CosmeticSubCategory @map("sub_category")
+  level       Int
+  imagePath   String              @map("image_path") @db.VarChar(255)
+
+  userItems UserCosmeticItem[]
+
+  @@index([subCategory])
+  @@index([level])
+  @@map("cosmetic_items")
+}
+
+model UserCosmeticItem {
+  id             Int                  @id @default(autoincrement())
+  userId         Int                  @map("user_id")
+  cosmeticItemId Int                  @map("cosmetic_item_id")
+  equipSlot      CosmeticSubCategory? @map("equip_slot")
+
+  user         User         @relation(fields: [userId], references: [id])
+  cosmeticItem CosmeticItem @relation(fields: [cosmeticItemId], references: [id])
+
+  @@unique([userId, cosmeticItemId])
+  @@unique([userId, equipSlot])
+  @@map("user_cosmetic_items")
+}
+
+model GameItem {
+  id          Int     @id @default(autoincrement())
+  code        String  @unique @db.VarChar(20)
+  name        String  @db.VarChar(50)
+  price       Int
+  level       Int
+  description String  @db.Text
+  effect      String  @db.Text
+  imagePath   String? @map("image_path") @db.VarChar(255)
+  durationMs  Int     @map("duration_ms")
+  cooldownMs  Int     @map("cooldown_ms")
+
+  userItems UserGameItem[]
+
+  @@index([level])
+  @@map("game_items")
+}
+
+model UserGameItem {
+  id         Int @id @default(autoincrement())
+  userId     Int @map("user_id")
+  gameItemId Int @map("game_item_id")
+  quantity   Int @default(1)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameItem GameItem @relation(fields: [gameItemId], references: [id])
+
+  @@unique([userId, gameItemId])
+  @@map("user_game_items")
+}
