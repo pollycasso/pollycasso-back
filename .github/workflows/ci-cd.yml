@@ -72,6 +72,9 @@ jobs:
       DEPLOY_DIR: /home/ubuntu/10term-pollycasso-back
       COMPOSE_FILE: docker-compose.yml
     steps:
+      - name: Checkout repository in server
+        uses: actions/checkout@v4
+
       - name: Set IMAGE_TAG for main branch
         if: github.ref == 'refs/heads/main'
         run: echo "IMAGE_TAG=latest" >> $GITHUB_ENV
@@ -86,4 +89,6 @@ jobs:
           echo "배포 시작 - 브랜치: ${{ github.ref_name }}"
           echo "배포 이미지: ${IMAGE_NAME}:${IMAGE_TAG}"
           IMAGE_NAME=${IMAGE_NAME} IMAGE_TAG=${IMAGE_TAG} docker compose -f "$COMPOSE_FILE" up -d --pull always
+
+          docker image prune -f
           echo "배포 완료!"
