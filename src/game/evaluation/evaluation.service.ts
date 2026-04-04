@@ -14,6 +14,7 @@ import { EVALUATION_ERRORS, SCORE_MAX, SCORE_MIN } from './constants/evaluation.
 import { wsError } from 'src/common/utils/ws-error.util';
 import { EVALUATION_VOTE } from './interfaces/evaluation-vote.interface';
 import type { IEvaluationVote } from './interfaces/evaluation-vote.interface';
+import type { PhaseDisconnectResult } from '../interfaces/game-disconnect.interface';
 
 export const makeDrawingId = (matchId: number, roomMemberId: number, round: number) =>
   `${matchId}:${roomMemberId}:${round}`;
@@ -41,19 +42,33 @@ export class EvaluationService {
     return ctx;
   }
 
-  async handleDisconnect(roomId: number, userId: number): Promise<void> {
-    const gameState = await this.store.get(roomId);
-    if (!gameState || gameState.phase !== GamePhase.EVALUATING) return;
+  // 연결 해제 처리 — 결과만 반환 (DB I/O는 GameSessionService에서 수행)
+  computeDisconnect(params: { state: GameState; userId: number }): PhaseDisconnectResult | null {
+    const { state, userId } = params;
 
-    const ctx = this.getEvaluatingContextOrNull(gameState);
-    if (!ctx) return;
+    if (state.phase !== GamePhase.EVALUATING) return null;
+
+    const ctx = this.getEvaluatingContextOrNull(state);
+    if (!ctx) return null;
+
+    const wasActive = (ctx.activeUserIds ?? []).includes(userId);
+    if (!wasActive) return null;
 
     const nextActive = (ctx.activeUserIds ?? []).filter((id) => id !== userId);
     const nextReady = (ctx.readyUserIds ?? []).filter((id) => id !== userId);
 
-    await this.store.patch(roomId, {
-      phaseContext: { ...ctx, activeUserIds: nextActive, readyUserIds: nextReady },
-    });
+    const nextCtx: EvaluatingContext = {
+      ...ctx,
+      activeUserIds: nextActive,
+      readyUserIds: nextReady,
+    };
+    const shouldAdvance = this.isAllReady(nextCtx);
+
+    return {
+      nextPhaseContext: nextCtx,
+      shouldAdvance,
+      playerUpdate: { userId, changes: { isConnected: false } },
+    };
   }
 
   private isAllReady(ctx: EvaluatingContext): boolean {

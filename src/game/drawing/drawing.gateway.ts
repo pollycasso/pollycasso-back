@@ -60,19 +60,4 @@ export class DrawingGateway {
 
     return { ok: true, shouldAdvance: res.shouldAdvance };
   }
-
-  async handleDisconnect(socket: GameSocket) {
-    const userId = requireUserId(socket);
-    const roomId = requireRoomId(socket);
-
-    const res = await this.drawingService.handleDisconnect({ roomId, userId });
-
-    if (res.playerUpdate) {
-      this.server.to(this.roomSocketRoom(roomId)).emit('room:updatePlayer', res.playerUpdate);
-    }
-
-    if (res.shouldAdvance) {
-      await this.gameSessionService.advanceToEvaluating({ roomId, server: this.server });
-    }
-  }
 }

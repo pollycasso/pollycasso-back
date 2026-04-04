@@ -12,6 +12,7 @@ import { DrawingRepository } from './drawing.repository';
 import { DRAWING_ERRORS } from './constants/drawing.constant';
 import { DrawingPhaseContextEntity } from './entities/drawing.entity';
 import { GameItemService } from '../item/game-item.service';
+import type { PhaseDisconnectResult } from '../interfaces/game-disconnect.interface';
 
 @Injectable()
 export class DrawingService {
@@ -69,34 +70,21 @@ export class DrawingService {
     };
   }
 
-  // 연결 해제 처리 및 조건 충족 시 DB 커밋/정리
-  async handleDisconnect(params: { roomId: number; userId: number }): Promise<{
-    shouldAdvance: boolean;
-    playerUpdate?: { userId: number; changes: { isConnected: false } };
-  }> {
-    const { roomId, userId } = params;
+  // 연결 해제 처리 — 결과만 반환 (DB I/O는 GameSessionService에서 수행)
+  computeDisconnect(params: { state: GameState; userId: number }): PhaseDisconnectResult | null {
+    const { state, userId } = params;
 
-    const state = await this.gameStateStore.get(roomId);
-    if (!state) return { shouldAdvance: false };
-    if (state.phase !== GamePhase.DRAWING) return { shouldAdvance: false };
-    if (!state.phaseContext || state.phaseContext.kind !== GamePhase.DRAWING) {
-      return { shouldAdvance: false };
-    }
+    if (state.phase !== GamePhase.DRAWING) return null;
+    if (!state.phaseContext || state.phaseContext.kind !== GamePhase.DRAWING) return null;
 
     const ctxEntity = DrawingPhaseContextEntity.fromPhaseContext(state.phaseContext);
 
     const removed = ctxEntity.removeUser(userId);
-    if (!removed) return { shouldAdvance: false };
-
-    const patched = await this.gameStateStore.patch(roomId, {
-      phaseContext: ctxEntity.toPlain(),
-    });
-    if (!patched) return { shouldAdvance: false };
-
-    const shouldAdvance = ctxEntity.isReadyToAdvance;
+    if (!removed) return null;
 
     return {
-      shouldAdvance,
+      nextPhaseContext: ctxEntity.toPlain(),
+      shouldAdvance: ctxEntity.isReadyToAdvance,
       playerUpdate: { userId, changes: { isConnected: false } },
     };
   }
