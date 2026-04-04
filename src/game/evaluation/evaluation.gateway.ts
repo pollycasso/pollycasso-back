@@ -30,7 +30,7 @@ import { wsError } from 'src/common/utils/ws-error.util';
   namespace: '/game',
 })
 export class EvaluationGateway {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   constructor(
     private readonly evalService: EvaluationService,

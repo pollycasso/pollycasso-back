@@ -24,7 +24,7 @@ import { wsError } from 'src/common/utils/ws-error.util';
   namespace: '/game',
 })
 export class GameItemGateway {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   constructor(
     private readonly gameItemService: GameItemService,

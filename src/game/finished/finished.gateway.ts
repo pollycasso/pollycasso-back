@@ -14,7 +14,7 @@ import { MatchRewardResponseDto } from './dtos/responses/match-reward.dto';
   namespace: '/game',
 })
 export class FinishedGateway {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   unicastRewards(userId: number, payload: MatchRewardResponseDto) {
     this.server

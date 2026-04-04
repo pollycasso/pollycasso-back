@@ -56,7 +56,7 @@ import { RoomUpdatePlayerPayload } from './interfaces/game.interface';
   namespace: '/game',
 })
 export class GameGateway implements IGameEventPublisher, OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
   private readonly logger = new Logger(GameGateway.name);
 
   constructor(

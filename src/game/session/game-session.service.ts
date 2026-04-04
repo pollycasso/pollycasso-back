@@ -6,7 +6,7 @@ import type { IGameEventPublisher } from '../interfaces/game-event-publisher.int
 import { TopicService } from '../topic/topic.service';
 import { GameSessionEntity } from '../entities/game-session.entity';
 import { RANDOM_THEMES } from '../topic/constants/topic.constant';
-import { GAME_ERRORS, GAME_EVENTS } from '../constants/game.constant';
+import { GAME_DEFAULTS, GAME_ERRORS, GAME_EVENTS, GAME_TIMINGS } from '../constants/game.constant';
 import {
   DrawingContext,
   EvaluatingContext,
@@ -26,11 +26,6 @@ import { FinishedReturnService } from '../finished/finished-return.service';
 import { FinalRewardsByUserId } from '../finished/types/finished.type';
 
 type GameRemoteSocket = RemoteSocket<DefaultEventsMap, GameSocketData>;
-
-const THEME_SELECTING_DURATION_MS = 32000; // 32초
-const DRAWING_DURATION_MS = 92000; // 92초
-const EVALUATING_DURATION_MS = 60000; // 60초
-const ROUND_SUMMARY_DURATION_MS = 32000; // 32초
 
 @Injectable()
 export class GameSessionService {
@@ -223,7 +218,7 @@ export class GameSessionService {
 
     const timer = setTimeout(() => {
       void this.advanceToEvaluating({ roomId, server, expectedPhaseInstanceId: phaseInstanceId });
-    }, DRAWING_DURATION_MS);
+    }, GAME_TIMINGS.DRAWING_DURATION_MS);
 
     this.phaseTransitionTimersByRoomId.set(roomId, timer);
 
@@ -261,7 +256,7 @@ export class GameSessionService {
     const drawingsByUserId: Record<number, DrawData> =
       await this.drawingService.getDrawingsByUserIdForEvaluating({ roomId, round, state });
 
-    const endsAt = Date.now() + EVALUATING_DURATION_MS;
+    const endsAt = Date.now() + GAME_TIMINGS.EVALUATING_DURATION_MS;
 
     const evaluatingContext: EvaluatingContext = {
       kind: GamePhase.EVALUATING,
@@ -280,7 +275,7 @@ export class GameSessionService {
 
     this.startEvaluatingPhaseTimer({ roomId, server });
 
-    server.to(this.roomSocketRoom(roomId)).emit('room:updateGameState', {
+    server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
       phase: GamePhase.EVALUATING,
       endsAt,
       phaseContext: evaluatingContext,
@@ -337,7 +332,7 @@ export class GameSessionService {
         nicknameByUserId,
       });
 
-      const endsAtMs = ROUND_SUMMARY_DURATION_MS;
+      const endsAtMs = GAME_TIMINGS.ROUND_SUMMARY_DURATION_MS;
 
       const patched = await this.gameStateStore.patch(roomId, {
         phase: GamePhase.ROUND_SUMMARY,
@@ -351,7 +346,7 @@ export class GameSessionService {
         return;
       }
 
-      server.to(this.roomSocketRoom(roomId)).emit('room:updateGameState', {
+      server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
         phase: patched.phase,
         endsAt: patched.endsAt,
         phaseContext: patched.phaseContext,
@@ -394,7 +389,7 @@ export class GameSessionService {
       this.clearPhaseTimer(roomId);
 
       const currentRound = state.currentRound ?? 1;
-      const totalRounds = state.totalRounds ?? 3;
+      const totalRounds = state.totalRounds ?? GAME_DEFAULTS.TOTAL_ROUNDS;
       const isLastRound = totalRounds > 0 && currentRound >= totalRounds;
 
       const entity = GameSessionEntity.restore(state);
@@ -407,7 +402,7 @@ export class GameSessionService {
         const themeContext = await this.topicService.buildThemeSelectionContext(roomId);
         if (!themeContext) return;
 
-        const endsAt = Date.now() + THEME_SELECTING_DURATION_MS;
+        const endsAt = Date.now() + GAME_TIMINGS.THEME_SELECTING_DURATION_MS;
 
         ({ nextState } = entity.advanceToThemeSelecting({
           themeSelectingEndsAt: endsAt,
@@ -507,13 +502,16 @@ export class GameSessionService {
     };
 
     const currentRound = state.currentRound || 1;
-    const totalRounds = state.totalRounds || 3;
-    const recentThemes = [selectedTopic, ...(state.recentThemes ?? [])].slice(0, 3);
+    const totalRounds = state.totalRounds || GAME_DEFAULTS.TOTAL_ROUNDS;
+    const recentThemes = [selectedTopic, ...(state.recentThemes ?? [])].slice(
+      0,
+      GAME_DEFAULTS.RECENT_THEMES_LIMIT,
+    );
 
     const patched = await this.gameStateStore.patch(roomId, {
       phase: GamePhase.DRAWING,
       currentTheme: selectedTopic,
-      endsAt: Date.now() + DRAWING_DURATION_MS,
+      endsAt: Date.now() + GAME_TIMINGS.DRAWING_DURATION_MS,
       currentRound: currentRound,
       totalRounds: totalRounds,
       phaseContext: drawingContext,
@@ -534,7 +532,7 @@ export class GameSessionService {
 
     const timer = setTimeout(() => {
       void this.advanceToEvaluating({ roomId, server, expectedPhaseInstanceId: phaseInstanceId });
-    }, DRAWING_DURATION_MS);
+    }, GAME_TIMINGS.DRAWING_DURATION_MS);
 
     this.phaseTransitionTimersByRoomId.set(roomId, timer);
 
@@ -639,7 +637,7 @@ export class GameSessionService {
 
     this.schedulePhaseTransition({
       roomId,
-      delayMs: EVALUATING_DURATION_MS,
+      delayMs: GAME_TIMINGS.EVALUATING_DURATION_MS,
       expectedPhase: GamePhase.EVALUATING,
       server,
       onTimeout: async () => {
