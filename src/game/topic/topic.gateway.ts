@@ -12,13 +12,15 @@ import { TopicDto } from './dtos/requests/topic.dto';
 import type { GameSocket } from '../interfaces/gameSocket.interface';
 import { GameSessionService } from '../session/game-session.service';
 import {
-  GAME_STATE_STORE,
   GamePhase,
   GameState,
+  GAME_STATE_STORE,
   type IGameStateStore,
 } from 'src/game-state/interfaces/game-state.interface';
+import { RoomUpdateGameStatePayload } from 'src/game-state/interfaces/game-state-view.interface';
 import { requireRoomId, requireUserId } from '../utils/game-ws.util';
 import { GAME_EVENTS } from '../constants/game.constant';
+import { buildPhaseSnapshotFromState } from '../utils/game-phase-ready.util';
 
 @UseFilters(SocketExceptionFilter)
 @WebSocketGateway({
@@ -90,7 +92,13 @@ export class TopicGateway {
     }
 
     const next = await this.gameStateStore.patch(roomId, patch);
+    if (!next) return;
 
-    this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, next);
+    const payload: RoomUpdateGameStatePayload = {
+      ...next,
+      snapshot: buildPhaseSnapshotFromState(next),
+    };
+
+    this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, payload);
   }
 }

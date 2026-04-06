@@ -24,6 +24,7 @@ import { EvaluationService } from '../evaluation/evaluation.service';
 import { MatchLifecycleService } from '../finished/match-lifecycle.service';
 import { FinishedReturnService } from '../finished/finished-return.service';
 import { FinalRewardsByUserId } from '../finished/types/finished.type';
+import { RoomUpdateGameStatePayload } from 'src/game-state/interfaces/game-state-view.interface';
 
 type GameRemoteSocket = RemoteSocket<DefaultEventsMap, GameSocketData>;
 
@@ -67,10 +68,14 @@ export class GameSessionService {
       this.clearPhaseTimer(roomId);
       await this.gameStateStore.delete(roomId);
 
-      server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
+      const payload: RoomUpdateGameStatePayload = {
         phase: GamePhase.FINISHED,
+        endsAt: null,
+        phaseContext: null,
+        roomMemberIdByUserId: remainingMembers as Record<number, number>,
         reason: 'GAME_ABORTED_NOT_ENOUGH_PLAYERS',
-      });
+      };
+      this.eventPublisher.broadcastGameState(roomId, payload);
 
       this.logger.warn(
         `Game aborted: roomId=${roomId}, remaining=${remainingCount} after userId=${userId} left`,
@@ -116,9 +121,7 @@ export class GameSessionService {
 
     // ── 5. 후처리: 브로드캐스트 + Phase advance ──
     if (phaseResult?.playerUpdate) {
-      server
-        .to(this.roomSocketRoom(roomId))
-        .emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, phaseResult.playerUpdate);
+      this.eventPublisher.broadcastPlayerUpdate(roomId, phaseResult.playerUpdate);
     }
 
     if (phaseResult?.shouldAdvance) {
@@ -275,11 +278,7 @@ export class GameSessionService {
 
     this.startEvaluatingPhaseTimer({ roomId, server });
 
-    server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
-      phase: GamePhase.EVALUATING,
-      endsAt,
-      phaseContext: evaluatingContext,
-    });
+    this.eventPublisher.broadcastGameState(roomId, patched);
 
     const matchId = state.matchId;
     const memberMap = state.roomMemberIdByUserId;
@@ -346,11 +345,7 @@ export class GameSessionService {
         return;
       }
 
-      server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
-        phase: patched.phase,
-        endsAt: patched.endsAt,
-        phaseContext: patched.phaseContext,
-      });
+      this.eventPublisher.broadcastGameState(roomId, patched);
 
       void this.startRoundSummaryPhaseTimer({ roomId, server });
     } catch (e) {

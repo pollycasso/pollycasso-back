@@ -20,6 +20,7 @@ export const GAME_EVENTS = {
   LOADING_STARTED: 'game.loading.started',
   ROOM_READY_TOGGLE: 'room:readyToggle',
   ROOM_UPDATE_PLAYER: 'room:updatePlayer',
+  ROOM_UPDATE_READY_SUMMARY: 'room:updateReadySummary',
 } as const;
 
 export const GAME_DEFAULTS = {

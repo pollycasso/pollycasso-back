@@ -29,6 +29,11 @@ import { GameSessionService } from './session/game-session.service';
 import { RoundSummaryService } from './round-summary/round-summary.service';
 import { EvaluationService } from './evaluation/evaluation.service';
 import { RoomUpdatePlayerPayload } from './interfaces/game.interface';
+import {
+  RoomReadySummaryPayload,
+  RoomUpdateGameStatePayload,
+} from 'src/game-state/interfaces/game-state-view.interface';
+import { buildPhaseSnapshotFromState } from './utils/game-phase-ready.util';
 
 @UsePipes(
   new ValidationPipe({
@@ -173,7 +178,7 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection, On
           changes: { isReady },
         };
 
-        this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, payload);
+        this.broadcastPlayerUpdate(roomId, payload);
 
         if (allReady) {
           await this.gameSessionService.advanceToRoundSummary({ roomId, server: this.server });
@@ -192,9 +197,18 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection, On
     }
   }
 
-  broadcastGameState(roomId: number, payload: any) {
+  broadcastGameState(roomId: number, payload: RoomUpdateGameStatePayload) {
     const roomKey = `game:room:${roomId}`;
-    this.server.to(roomKey).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, payload);
+    const normalized = this.withPhaseSnapshot(payload);
+    this.server.to(roomKey).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, normalized);
+  }
+
+  broadcastPlayerUpdate(roomId: number, payload: RoomUpdatePlayerPayload) {
+    this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, payload);
+  }
+
+  broadcastReadySummary(roomId: number, payload: RoomReadySummaryPayload) {
+    this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_READY_SUMMARY, payload);
   }
 
   emitThemeConfirmed(roomId: number, currentTheme: string) {
@@ -222,5 +236,19 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection, On
     }
 
     this.logger.log(`Joined game room userId=${userId}, roomId=${roomId}, host=${isHost}`);
+  }
+
+  private withPhaseSnapshot(payload: RoomUpdateGameStatePayload): RoomUpdateGameStatePayload {
+    if (payload.snapshot) return payload;
+    if (!payload.roomMemberIdByUserId || !('phaseContext' in payload)) return payload;
+
+    return {
+      ...payload,
+      snapshot: buildPhaseSnapshotFromState({
+        phase: payload.phase,
+        phaseContext: payload.phaseContext ?? null,
+        roomMemberIdByUserId: payload.roomMemberIdByUserId,
+      }),
+    };
   }
 }
