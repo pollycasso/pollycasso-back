@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { GAME_TIMINGS } from 'src/game/constants/game.constant';
 import { GAME_EVENT_PUBLISHER } from 'src/game/interfaces/game-event-publisher.interfaces';
 import type { IGameEventPublisher } from 'src/game/interfaces/game-event-publisher.interfaces';
 import {
@@ -7,8 +8,6 @@ import {
   type IGameStateStore,
 } from 'src/game-state/interfaces/game-state.interface';
 import { FinishedRepository } from './finished.repository';
-
-const FINISHED_HOLD_MS = 8000; // 8초
 
 @Injectable()
 export class FinishedReturnService {
@@ -26,7 +25,7 @@ export class FinishedReturnService {
 
     const timeoutId = setTimeout(() => {
       void this.returnToWaiting(roomId);
-    }, FINISHED_HOLD_MS);
+    }, GAME_TIMINGS.FINISHED_HOLD_MS);
 
     this.timersByRoomId.set(roomId, timeoutId);
   }

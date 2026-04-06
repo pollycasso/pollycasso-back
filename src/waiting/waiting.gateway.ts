@@ -58,7 +58,7 @@ interface ClientData {
   },
 })
 export class WaitingGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   constructor(
     private readonly waitingService: WaitingService,

@@ -13,6 +13,7 @@ import type { Server } from 'socket.io';
 import type { GameSocket } from '../interfaces/gameSocket.interface';
 import { SendDrawingDto } from './dto/requests/send-drawing.dto';
 import { requireRoomId, requireUserId } from '../utils/game-ws.util';
+import { GAME_EVENTS } from '../constants/game.constant';
 
 @UseFilters(SocketExceptionFilter)
 @WebSocketGateway({
@@ -23,7 +24,7 @@ import { requireRoomId, requireUserId } from '../utils/game-ws.util';
   namespace: '/game',
 })
 export class DrawingGateway {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   constructor(
     private readonly drawingService: DrawingService,
@@ -51,7 +52,9 @@ export class DrawingGateway {
     const res = await this.drawingService.submitDrawing({ roomId, userId });
 
     if (res.playerUpdate) {
-      this.server.to(this.roomSocketRoom(roomId)).emit('room:updatePlayer', res.playerUpdate);
+      this.server
+        .to(this.roomSocketRoom(roomId))
+        .emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, res.playerUpdate);
     }
 
     if (res.shouldAdvance) {
@@ -59,20 +62,5 @@ export class DrawingGateway {
     }
 
     return { ok: true, shouldAdvance: res.shouldAdvance };
-  }
-
-  async handleDisconnect(socket: GameSocket) {
-    const userId = requireUserId(socket);
-    const roomId = requireRoomId(socket);
-
-    const res = await this.drawingService.handleDisconnect({ roomId, userId });
-
-    if (res.playerUpdate) {
-      this.server.to(this.roomSocketRoom(roomId)).emit('room:updatePlayer', res.playerUpdate);
-    }
-
-    if (res.shouldAdvance) {
-      await this.gameSessionService.advanceToEvaluating({ roomId, server: this.server });
-    }
   }
 }

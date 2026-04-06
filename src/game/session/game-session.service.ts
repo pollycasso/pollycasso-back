@@ -6,14 +6,16 @@ import type { IGameEventPublisher } from '../interfaces/game-event-publisher.int
 import { TopicService } from '../topic/topic.service';
 import { GameSessionEntity } from '../entities/game-session.entity';
 import { RANDOM_THEMES } from '../topic/constants/topic.constant';
-import { GAME_ERRORS, GAME_EVENTS } from '../constants/game.constant';
+import { GAME_DEFAULTS, GAME_ERRORS, GAME_EVENTS, GAME_TIMINGS } from '../constants/game.constant';
 import {
+  DrawingContext,
   EvaluatingContext,
   GAME_STATE_STORE,
   GamePhase,
   GameState,
   type IGameStateStore,
 } from 'src/game-state/interfaces/game-state.interface';
+import { randomUUID } from 'crypto';
 import type { DrawData } from '../drawing/interface/drawing.interface';
 import { DrawingService } from '../drawing/drawing.service';
 import { GameSocketData } from '../interfaces/gameSocket.interface';
@@ -24,11 +26,6 @@ import { FinishedReturnService } from '../finished/finished-return.service';
 import { FinalRewardsByUserId } from '../finished/types/finished.type';
 
 type GameRemoteSocket = RemoteSocket<DefaultEventsMap, GameSocketData>;
-
-const THEME_SELECTING_DURATION_MS = 32000; // 32초
-const DRAWING_DURATION_MS = 92000; // 92초
-const EVALUATING_DURATION_MS = 60000; // 60초
-const ROUND_SUMMARY_DURATION_MS = 32000; // 32초
 
 @Injectable()
 export class GameSessionService {
@@ -48,6 +45,103 @@ export class GameSessionService {
   @OnEvent(GAME_EVENTS.LOADING_STARTED)
   async handleLoadingStarted(payload: { roomId: number }) {
     await this.startTopicPhase(payload.roomId);
+  }
+
+  // 소켓 접속 종료 → 공통 처리 + Phase별 분기
+  async handleDisconnect(params: {
+    roomId: number;
+    userId: number;
+    server: Server;
+  }): Promise<void> {
+    const { roomId, userId, server } = params;
+
+    const state = await this.gameStateStore.get(roomId);
+    if (!state) return;
+
+    // ── 1. 공통: 글로벌 유저 목록에서 제거 ──
+    const { [userId]: _removed, ...remainingMembers } = state.roomMemberIdByUserId;
+    const remainingCount = Object.keys(remainingMembers).length;
+
+    // ── 2. 공통: 인원 부족 시 조기 종료 (방 폭파) ──
+    if (remainingCount <= 1) {
+      this.clearPhaseTimer(roomId);
+      await this.gameStateStore.delete(roomId);
+
+      server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
+        phase: GamePhase.FINISHED,
+        reason: 'GAME_ABORTED_NOT_ENOUGH_PLAYERS',
+      });
+
+      this.logger.warn(
+        `Game aborted: roomId=${roomId}, remaining=${remainingCount} after userId=${userId} left`,
+      );
+      return;
+    }
+
+    // ── 3. Phase별 분기 (결과만 반환, DB I/O 없음) ──
+    let phaseResult:
+      | import('../interfaces/game-disconnect.interface').PhaseDisconnectResult
+      | null = null;
+
+    switch (state.phase) {
+      case GamePhase.THEME_SELECTING:
+        phaseResult = this.topicService.computeDisconnect({ state, userId });
+        break;
+
+      case GamePhase.DRAWING:
+        phaseResult = this.drawingService.computeDisconnect({ state, userId });
+        break;
+
+      case GamePhase.EVALUATING:
+        phaseResult = this.evaluationService.computeDisconnect({ state, userId });
+        break;
+
+      default:
+        break;
+    }
+
+    // ── 4. 단일 DB patch (공통 + Phase 결과 합산) ──
+    const patchPayload: Partial<
+      import('src/game-state/interfaces/game-state.interface').GameState
+    > = {
+      roomMemberIdByUserId: remainingMembers as Record<number, number>,
+    };
+
+    if (phaseResult) {
+      patchPayload.phaseContext = phaseResult.nextPhaseContext;
+    }
+
+    const patched = await this.gameStateStore.patch(roomId, patchPayload);
+    if (!patched) return;
+
+    // ── 5. 후처리: 브로드캐스트 + Phase advance ──
+    if (phaseResult?.playerUpdate) {
+      server
+        .to(this.roomSocketRoom(roomId))
+        .emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, phaseResult.playerUpdate);
+    }
+
+    if (phaseResult?.shouldAdvance) {
+      switch (state.phase) {
+        case GamePhase.THEME_SELECTING:
+          if (phaseResult.transitionPayload?.selectedTopic) {
+            await this.forceStartDrawingPhase({
+              roomId,
+              server,
+              selectedTopic: phaseResult.transitionPayload.selectedTopic,
+            });
+          }
+          break;
+
+        case GamePhase.DRAWING:
+          await this.advanceToEvaluating({ roomId, server });
+          break;
+
+        case GamePhase.EVALUATING:
+          await this.advanceToRoundSummary({ roomId, server });
+          break;
+      }
+    }
   }
 
   // 주제 선정 단계 자동 전환
@@ -124,7 +218,7 @@ export class GameSessionService {
 
     const timer = setTimeout(() => {
       void this.advanceToEvaluating({ roomId, server, expectedPhaseInstanceId: phaseInstanceId });
-    }, DRAWING_DURATION_MS);
+    }, GAME_TIMINGS.DRAWING_DURATION_MS);
 
     this.phaseTransitionTimersByRoomId.set(roomId, timer);
 
@@ -162,7 +256,7 @@ export class GameSessionService {
     const drawingsByUserId: Record<number, DrawData> =
       await this.drawingService.getDrawingsByUserIdForEvaluating({ roomId, round, state });
 
-    const endsAt = Date.now() + EVALUATING_DURATION_MS;
+    const endsAt = Date.now() + GAME_TIMINGS.EVALUATING_DURATION_MS;
 
     const evaluatingContext: EvaluatingContext = {
       kind: GamePhase.EVALUATING,
@@ -181,7 +275,7 @@ export class GameSessionService {
 
     this.startEvaluatingPhaseTimer({ roomId, server });
 
-    server.to(this.roomSocketRoom(roomId)).emit('room:updateGameState', {
+    server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
       phase: GamePhase.EVALUATING,
       endsAt,
       phaseContext: evaluatingContext,
@@ -238,7 +332,7 @@ export class GameSessionService {
         nicknameByUserId,
       });
 
-      const endsAtMs = ROUND_SUMMARY_DURATION_MS;
+      const endsAtMs = GAME_TIMINGS.ROUND_SUMMARY_DURATION_MS;
 
       const patched = await this.gameStateStore.patch(roomId, {
         phase: GamePhase.ROUND_SUMMARY,
@@ -252,7 +346,7 @@ export class GameSessionService {
         return;
       }
 
-      server.to(this.roomSocketRoom(roomId)).emit('room:updateGameState', {
+      server.to(this.roomSocketRoom(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, {
         phase: patched.phase,
         endsAt: patched.endsAt,
         phaseContext: patched.phaseContext,
@@ -295,7 +389,7 @@ export class GameSessionService {
       this.clearPhaseTimer(roomId);
 
       const currentRound = state.currentRound ?? 1;
-      const totalRounds = state.totalRounds ?? 3;
+      const totalRounds = state.totalRounds ?? GAME_DEFAULTS.TOTAL_ROUNDS;
       const isLastRound = totalRounds > 0 && currentRound >= totalRounds;
 
       const entity = GameSessionEntity.restore(state);
@@ -308,7 +402,7 @@ export class GameSessionService {
         const themeContext = await this.topicService.buildThemeSelectionContext(roomId);
         if (!themeContext) return;
 
-        const endsAt = Date.now() + THEME_SELECTING_DURATION_MS;
+        const endsAt = Date.now() + GAME_TIMINGS.THEME_SELECTING_DURATION_MS;
 
         ({ nextState } = entity.advanceToThemeSelecting({
           themeSelectingEndsAt: endsAt,
@@ -371,6 +465,80 @@ export class GameSessionService {
     } finally {
       this.roundSummaryExitGuard.delete(roomId);
     }
+  }
+
+  /**
+   * Selector 퇴장으로 인한 시스템 주도 DRAWING 강제 전환.
+   * GameSessionEntity.startDrawing()은 selectorId 검증을 수행하므로,
+   * selector가 이미 퇴장한 상황에서는 entity를 거치지 않고 직접 state를 구성한다.
+   */
+  private async forceStartDrawingPhase(params: {
+    roomId: number;
+    server: Server;
+    selectedTopic: string;
+  }): Promise<void> {
+    const { roomId, server, selectedTopic } = params;
+
+    const state = await this.gameStateStore.get(roomId);
+    if (!state) return;
+
+    this.clearPhaseTimer(roomId);
+
+    const sockets = await this.fetchGameSockets(server, roomId);
+    const connectedUserIds = new Set(
+      sockets.map((s) => s.data.userId).filter((id): id is number => typeof id === 'number'),
+    );
+
+    const memberUserIds = Object.keys(state.roomMemberIdByUserId).map(Number);
+    const activeUserIds = memberUserIds.filter((uid) => connectedUserIds.has(uid));
+
+    const phaseInstanceId = randomUUID();
+
+    const drawingContext: DrawingContext = {
+      kind: GamePhase.DRAWING,
+      phaseInstanceId,
+      activeUserIds: [...activeUserIds],
+      readyUserIds: [],
+    };
+
+    const currentRound = state.currentRound || 1;
+    const totalRounds = state.totalRounds || GAME_DEFAULTS.TOTAL_ROUNDS;
+    const recentThemes = [selectedTopic, ...(state.recentThemes ?? [])].slice(
+      0,
+      GAME_DEFAULTS.RECENT_THEMES_LIMIT,
+    );
+
+    const patched = await this.gameStateStore.patch(roomId, {
+      phase: GamePhase.DRAWING,
+      currentTheme: selectedTopic,
+      endsAt: Date.now() + GAME_TIMINGS.DRAWING_DURATION_MS,
+      currentRound: currentRound,
+      totalRounds: totalRounds,
+      phaseContext: drawingContext,
+      recentThemes,
+    });
+    if (!patched) return;
+
+    const roundId = phaseInstanceId;
+
+    await this.drawingService.startDrawing({
+      gameId: roomId.toString(),
+      roundId,
+      participantUserIds: activeUserIds,
+    });
+
+    this.eventPublisher.emitThemeConfirmed(roomId, selectedTopic);
+    this.eventPublisher.broadcastGameState(roomId, patched);
+
+    const timer = setTimeout(() => {
+      void this.advanceToEvaluating({ roomId, server, expectedPhaseInstanceId: phaseInstanceId });
+    }, GAME_TIMINGS.DRAWING_DURATION_MS);
+
+    this.phaseTransitionTimersByRoomId.set(roomId, timer);
+
+    this.logger.log(
+      `System forced DRAWING phase: roomId=${roomId}, topic="${selectedTopic}", activeUsers=${activeUserIds.length}`,
+    );
   }
 
   private phaseTransitionTimersByRoomId = new Map<number, NodeJS.Timeout>();
@@ -469,7 +637,7 @@ export class GameSessionService {
 
     this.schedulePhaseTransition({
       roomId,
-      delayMs: EVALUATING_DURATION_MS,
+      delayMs: GAME_TIMINGS.EVALUATING_DURATION_MS,
       expectedPhase: GamePhase.EVALUATING,
       server,
       onTimeout: async () => {

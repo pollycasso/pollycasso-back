@@ -53,7 +53,7 @@ interface ClientData {
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   constructor(
     private readonly chatService: ChatService,

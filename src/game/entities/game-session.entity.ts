@@ -3,8 +3,8 @@ import {
   GamePhase,
   GameState,
 } from 'src/game-state/interfaces/game-state.interface';
-import { GAME_ERRORS } from '../constants/game.constant';
 import { randomUUID } from 'crypto';
+import { GAME_DEFAULTS, GAME_ERRORS, GAME_TIMINGS } from '../constants/game.constant';
 
 export class GameSessionEntity {
   private constructor(private _state: GameState) {}
@@ -44,8 +44,7 @@ export class GameSessionEntity {
     }
 
     this._state.phase = GamePhase.THEME_SELECTING;
-    this._state.endsAt = Date.now() + 32000; // 32초
-
+    this._state.endsAt = Date.now() + GAME_TIMINGS.THEME_SELECTING_DURATION_MS;
     this._state.currentTheme = null;
 
     this._state.phaseContext = {
@@ -77,10 +76,9 @@ export class GameSessionEntity {
 
     this._state.phase = GamePhase.DRAWING;
     this._state.currentTheme = trimmedTheme;
-    this._state.endsAt = Date.now() + 92000; // 92초
-
+    this._state.endsAt = Date.now() + GAME_TIMINGS.DRAWING_DURATION_MS;
     if (!this._state.currentRound) this._state.currentRound = 1;
-    if (!this._state.totalRounds) this._state.totalRounds = 3;
+    if (!this._state.totalRounds) this._state.totalRounds = GAME_DEFAULTS.TOTAL_ROUNDS;
 
     const drawingContext: DrawingContext = {
       kind: GamePhase.DRAWING,
@@ -91,7 +89,10 @@ export class GameSessionEntity {
     this._state.phaseContext = drawingContext;
 
     const currentRecent = this._state.recentThemes ?? [];
-    this._state.recentThemes = [trimmedTheme, ...currentRecent].slice(0, 3);
+    this._state.recentThemes = [trimmedTheme, ...currentRecent].slice(
+      0,
+      GAME_DEFAULTS.RECENT_THEMES_LIMIT,
+    );
   }
 
   pickRandomTheme(pool: string[]): string {
@@ -123,7 +124,7 @@ export class GameSessionEntity {
     }
 
     const currentRound = this._state.currentRound ?? 1;
-    const totalRounds = this._state.totalRounds ?? 3;
+    const totalRounds = this._state.totalRounds ?? GAME_DEFAULTS.TOTAL_ROUNDS;
     const isLastRound = totalRounds > 0 && currentRound >= totalRounds;
 
     if (isLastRound) {

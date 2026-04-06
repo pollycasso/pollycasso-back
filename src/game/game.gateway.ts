@@ -2,6 +2,7 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -54,8 +55,8 @@ import { RoomUpdatePlayerPayload } from './interfaces/game.interface';
   },
   namespace: '/game',
 })
-export class GameGateway implements IGameEventPublisher, OnGatewayConnection {
-  @WebSocketServer() server: Server;
+export class GameGateway implements IGameEventPublisher, OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() server!: Server;
   private readonly logger = new Logger(GameGateway.name);
 
   constructor(
@@ -105,6 +106,23 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection {
     } catch {
       client.disconnect();
     }
+  }
+
+  async handleDisconnect(client: GameSocket) {
+    const userId = client.data?.userId;
+    const roomId = client.data?.roomId;
+
+    this.logger.log(
+      `Disconnected socketId=${client.id}, userId=${userId ?? 'none'}, roomId=${roomId ?? 'none'}`,
+    );
+
+    if (!userId || !roomId) return;
+
+    await this.gameSessionService.handleDisconnect({
+      roomId,
+      userId,
+      server: this.server,
+    });
   }
 
   @SubscribeMessage('game:join')

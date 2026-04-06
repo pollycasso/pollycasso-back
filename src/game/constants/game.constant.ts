@@ -21,3 +21,16 @@ export const GAME_EVENTS = {
   ROOM_READY_TOGGLE: 'room:readyToggle',
   ROOM_UPDATE_PLAYER: 'room:updatePlayer',
 } as const;
+
+export const GAME_DEFAULTS = {
+  TOTAL_ROUNDS: 3,
+  RECENT_THEMES_LIMIT: 3,
+} as const;
+
+export const GAME_TIMINGS = {
+  THEME_SELECTING_DURATION_MS: 32000,
+  DRAWING_DURATION_MS: 92000,
+  EVALUATING_DURATION_MS: 60000,
+  ROUND_SUMMARY_DURATION_MS: 32000,
+  FINISHED_HOLD_MS: 8000,
+} as const;

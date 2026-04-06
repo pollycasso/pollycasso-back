@@ -18,6 +18,7 @@ import {
   type IGameStateStore,
 } from 'src/game-state/interfaces/game-state.interface';
 import { requireRoomId, requireUserId } from '../utils/game-ws.util';
+import { GAME_EVENTS } from '../constants/game.constant';
 
 @UseFilters(SocketExceptionFilter)
 @WebSocketGateway({
@@ -32,7 +33,7 @@ export class TopicGateway {
     private readonly gameSessionService: GameSessionService,
     @Inject(GAME_STATE_STORE) private readonly gameStateStore: IGameStateStore,
   ) {}
-  @WebSocketServer() server: Server;
+  @WebSocketServer() server!: Server;
 
   @SubscribeMessage('game:typing')
   handleTyping(@ConnectedSocket() client: GameSocket, @MessageBody() data: TopicDto) {
@@ -90,6 +91,6 @@ export class TopicGateway {
 
     const next = await this.gameStateStore.patch(roomId, patch);
 
-    this.server.to(`game:room:${roomId}`).emit('room:updateGameState', next);
+    this.server.to(`game:room:${roomId}`).emit(GAME_EVENTS.ROOM_UPDATE_GAME_STATE, next);
   }
 }
