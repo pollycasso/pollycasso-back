@@ -4,6 +4,7 @@ export interface RoomReadySummaryPayload {
   phase: GamePhase;
   readyCount: number;
   totalCount: number;
+  allReady: boolean;
 }
 
 export interface RoomPhasePlayerSnapshot {

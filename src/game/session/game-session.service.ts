@@ -25,6 +25,7 @@ import { MatchLifecycleService } from '../finished/match-lifecycle.service';
 import { FinishedReturnService } from '../finished/finished-return.service';
 import { FinalRewardsByUserId } from '../finished/types/finished.type';
 import { RoomUpdateGameStatePayload } from 'src/game-state/interfaces/game-state-view.interface';
+import { buildPhaseSnapshotFromState } from '../utils/game-phase-ready.util';
 
 type GameRemoteSocket = RemoteSocket<DefaultEventsMap, GameSocketData>;
 
@@ -278,7 +279,10 @@ export class GameSessionService {
 
     this.startEvaluatingPhaseTimer({ roomId, server });
 
-    this.eventPublisher.broadcastGameState(roomId, patched);
+    this.eventPublisher.broadcastGameState(roomId, {
+      ...patched,
+      snapshot: buildPhaseSnapshotFromState(patched),
+    });
 
     const matchId = state.matchId;
     const memberMap = state.roomMemberIdByUserId;

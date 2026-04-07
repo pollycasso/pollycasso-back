@@ -51,16 +51,21 @@ export class DrawingGateway {
 
     const res = await this.drawingService.submitDrawing({ roomId, userId });
 
+    if (res.shouldAdvance) {
+      await this.gameSessionService.advanceToEvaluating({ roomId, server: this.server });
+      return { ok: true, shouldAdvance: true };
+    }
+
     if (res.playerUpdate) {
       this.server
         .to(this.roomSocketRoom(roomId))
         .emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, res.playerUpdate);
     }
 
-    if (res.shouldAdvance) {
-      await this.gameSessionService.advanceToEvaluating({ roomId, server: this.server });
-    }
+    this.server
+      .to(this.roomSocketRoom(roomId))
+      .emit(GAME_EVENTS.ROOM_UPDATE_READY_SUMMARY, res.readySummary);
 
-    return { ok: true, shouldAdvance: res.shouldAdvance };
+    return { ok: true, shouldAdvance: false };
   }
 }

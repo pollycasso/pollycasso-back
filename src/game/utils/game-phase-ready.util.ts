@@ -29,37 +29,31 @@ function getReadyUserIds(state: ReadySummarySource): number[] {
   return [];
 }
 
-export function getReadySummaryFromState(state: ReadySummarySource): RoomReadySummaryPayload {
+export function getReadyTargetCountByPhase(state: ReadySummarySource): number {
   switch (state.phase) {
     case GamePhase.DRAWING:
     case GamePhase.EVALUATING: {
       const ctx = state.phaseContext;
-      if (!isActiveReadyPhaseContext(ctx)) {
-        return { phase: state.phase, readyCount: 0, totalCount: 0 };
-      }
-
-      return {
-        phase: state.phase,
-        readyCount: ctx.readyUserIds.length,
-        totalCount: ctx.activeUserIds.length,
-      };
+      return isActiveReadyPhaseContext(ctx) ? ctx.activeUserIds.length : 0;
     }
 
-    case GamePhase.ROUND_SUMMARY: {
-      const ctx = state.phaseContext;
-      return {
-        phase: state.phase,
-        readyCount: isRoundSummaryPhaseContext(ctx) ? ctx.readyUserIds.length : 0,
-        totalCount: Object.keys(state.roomMemberIdByUserId ?? {}).length,
-      };
-    }
+    case GamePhase.ROUND_SUMMARY:
+      return Object.keys(state.roomMemberIdByUserId ?? {}).length;
 
     default:
-      return {
-        phase: state.phase,
-        readyCount: 0,
-        totalCount: 0,
-      };
+      return 0;
+  }
+}
+
+export function getReadySummaryFromState(state: ReadySummarySource): RoomReadySummaryPayload {
+  const readyCount = getReadyUserIds(state).length;
+  const totalCount = getReadyTargetCountByPhase(state);
+
+  return {
+    phase: state.phase,
+    readyCount,
+    totalCount,
+    allReady: totalCount > 0 && readyCount >= totalCount,
   }
 }
 

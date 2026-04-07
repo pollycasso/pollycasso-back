@@ -167,11 +167,16 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection, On
 
     switch (gameState.phase) {
       case GamePhase.EVALUATING: {
-        const { isReady, allReady } = await this.evaluationService.toggleReady(
+        const { isReady, allReady, readySummary } = await this.evaluationService.toggleReady(
           roomId,
           gameState,
           userId,
         );
+
+        if (allReady) {
+          await this.gameSessionService.advanceToRoundSummary({ roomId, server: this.server });
+          return;
+        }
 
         const payload: RoomUpdatePlayerPayload = {
           userId,
@@ -179,10 +184,7 @@ export class GameGateway implements IGameEventPublisher, OnGatewayConnection, On
         };
 
         this.broadcastPlayerUpdate(roomId, payload);
-
-        if (allReady) {
-          await this.gameSessionService.advanceToRoundSummary({ roomId, server: this.server });
-        }
+        this.broadcastReadySummary(roomId, readySummary);
         return;
       }
 
