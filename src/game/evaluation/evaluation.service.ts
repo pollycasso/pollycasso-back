@@ -15,6 +15,7 @@ import { wsError } from 'src/common/utils/ws-error.util';
 import { EVALUATION_VOTE } from './interfaces/evaluation-vote.interface';
 import type { IEvaluationVote } from './interfaces/evaluation-vote.interface';
 import type { PhaseDisconnectResult } from '../interfaces/game-disconnect.interface';
+import { type RoomReadySummaryPayload } from 'src/game-state/interfaces/game-state-view.interface';
 
 export const makeDrawingId = (matchId: number, roomMemberId: number, round: number) =>
   `${matchId}:${roomMemberId}:${round}`;
@@ -102,7 +103,7 @@ export class EvaluationService {
     roomId: number,
     gameState: GameState,
     userId: PlayerId,
-  ): Promise<{ isReady: boolean; allReady: boolean }> {
+  ): Promise<{ isReady: boolean; allReady: boolean; readySummary: RoomReadySummaryPayload }> {
     if (gameState.phase !== GamePhase.EVALUATING) {
       throw wsError(400, EVALUATION_ERRORS.INVALID_PHASE);
     }
@@ -136,8 +137,14 @@ export class EvaluationService {
 
     const patchedCtx = this.getEvaluatingContextOrNull(patched);
     const allReady = patchedCtx ? this.isAllReady(patchedCtx) : false;
+    const readySummary: RoomReadySummaryPayload = {
+      phase: GamePhase.EVALUATING,
+      readyCount: patchedCtx?.readyUserIds.length ?? 0,
+      totalCount: patchedCtx?.activeUserIds.length ?? 0,
+      allReady,
+    };
 
-    return { isReady: willBeReady, allReady };
+    return { isReady: willBeReady, allReady, readySummary };
   }
 
   async submitEvaluation(

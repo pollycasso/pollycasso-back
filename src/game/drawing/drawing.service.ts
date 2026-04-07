@@ -13,6 +13,8 @@ import { DRAWING_ERRORS } from './constants/drawing.constant';
 import { DrawingPhaseContextEntity } from './entities/drawing.entity';
 import { GameItemService } from '../item/game-item.service';
 import type { PhaseDisconnectResult } from '../interfaces/game-disconnect.interface';
+import { type RoomReadySummaryPayload } from 'src/game-state/interfaces/game-state-view.interface';
+import { getReadySummaryFromState } from '../utils/game-phase-ready.util';
 
 @Injectable()
 export class DrawingService {
@@ -48,6 +50,7 @@ export class DrawingService {
   async submitDrawing(params: { roomId: number; userId: number }): Promise<{
     shouldAdvance: boolean;
     playerUpdate?: { userId: number; changes: { isReady: true } };
+    readySummary: RoomReadySummaryPayload;
   }> {
     const { roomId, userId } = params;
 
@@ -63,10 +66,12 @@ export class DrawingService {
     if (!patched) throw new ConflictException(DRAWING_ERRORS.GAME_STATE_NOT_FOUND);
 
     const shouldAdvance = ctxEntity.isReadyToAdvance;
+    const readySummary = getReadySummaryFromState(patched);
 
     return {
       shouldAdvance,
       playerUpdate: becameReady ? { userId, changes: { isReady: true } } : undefined,
+      readySummary,
     };
   }
 

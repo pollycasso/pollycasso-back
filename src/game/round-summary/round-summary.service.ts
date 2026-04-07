@@ -10,6 +10,8 @@ import {
 import { GameSessionService } from '../session/game-session.service';
 import { GAME_EVENTS } from '../constants/game.constant';
 import { RoomUpdatePlayerPayload } from '../interfaces/game.interface';
+import { type RoomReadySummaryPayload } from 'src/game-state/interfaces/game-state-view.interface';
+import { getReadySummaryFromState } from '../utils/game-phase-ready.util';
 
 @Injectable()
 export class RoundSummaryService {
@@ -30,6 +32,10 @@ export class RoundSummaryService {
     };
 
     server.to(this.roomKey(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_PLAYER, payload);
+  }
+
+  private broadcastReadySummary(server: Server, roomId: number, payload: RoomReadySummaryPayload) {
+    server.to(this.roomKey(roomId)).emit(GAME_EVENTS.ROOM_UPDATE_READY_SUMMARY, payload);
   }
 
   private getAllUserIdsFromState(state: GameState): number[] {
@@ -59,16 +65,18 @@ export class RoundSummaryService {
     });
     if (!patched) return;
 
-    this.broadcastPlayerReady(server, roomId, userId, isReady);
-
     const allUserIds = this.getAllUserIdsFromState(patched);
     const patchedCtx = patched.phaseContext;
     if (!patchedCtx || patchedCtx.kind !== GamePhase.ROUND_SUMMARY) return;
 
     const readySet = new Set(patchedCtx.readyUserIds ?? []);
     const allReady = allUserIds.length > 0 && allUserIds.every((id) => readySet.has(id));
-    if (!allReady) return;
+    if (allReady) {
+      await this.gameSessionService.advanceFromRoundSummary({ roomId, server });
+      return;
+    }
 
-    await this.gameSessionService.advanceFromRoundSummary({ roomId, server });
+    this.broadcastPlayerReady(server, roomId, userId, isReady);
+    this.broadcastReadySummary(server, roomId, getReadySummaryFromState(patched));
   }
 }
