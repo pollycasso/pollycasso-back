@@ -173,7 +173,10 @@ export class WaitingGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     this.server.to(`room:${body.roomId}`).emit(WAITING_EVENTS.ROOM_SYSTEM_MESSAGE, systemMessage);
 
-    client.emit(WAITING_EVENTS.ROOM_JOIN_SUCCESS, state);
+    client.emit(WAITING_EVENTS.ROOM_JOIN_SUCCESS, {
+      ...state,
+      roomId: body.roomId,
+    });
   }
 
   @SubscribeMessage(WAITING_EVENTS.ROOM_READY_TOGGLE)
